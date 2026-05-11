@@ -42,11 +42,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.rememberAsyncImagePainter
+import com.fusionx.vpn.R
 import com.fusionx.vpn.ui.components.TrafficStats
 import com.fusionx.vpn.ui.components.WatermarkOverlay
 import com.fusionx.vpn.ui.theme.CyanDark
@@ -75,6 +77,7 @@ fun HomeScreen(
     val totalUpload by viewModel.totalUpload.collectAsState()
     val totalDownload by viewModel.totalDownload.collectAsState()
     val wallpaperUri by viewModel.wallpaperUri.collectAsState()
+    val wallpaperFade by viewModel.wallpaperFade.collectAsState()
 
     val isConnected = connectionState == ConnectionState.CONNECTED
     val isConnecting = connectionState == ConnectionState.CONNECTING
@@ -96,28 +99,36 @@ fun HomeScreen(
     )
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Custom wallpaper background
+        // Custom wallpaper background — fills screen, respects fade setting
         if (wallpaperUri.isNotEmpty()) {
             Image(
                 painter = rememberAsyncImagePainter(Uri.parse(wallpaperUri)),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
-                alpha = 0.3f
+                alpha = if (wallpaperFade) 0.4f else 1f
             )
         }
 
-        // Main gradient overlay
+        // Gradient overlay (lighter when wallpaper is visible & not faded)
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(
-                            DarkBackground.copy(alpha = 0.9f),
-                            DarkBackground.copy(alpha = 0.7f),
-                            DarkBackground.copy(alpha = 0.9f)
-                        )
+                        colors = if (wallpaperUri.isNotEmpty() && !wallpaperFade) {
+                            listOf(
+                                DarkBackground.copy(alpha = 0.5f),
+                                DarkBackground.copy(alpha = 0.3f),
+                                DarkBackground.copy(alpha = 0.5f)
+                            )
+                        } else {
+                            listOf(
+                                DarkBackground.copy(alpha = 0.9f),
+                                DarkBackground.copy(alpha = 0.7f),
+                                DarkBackground.copy(alpha = 0.9f)
+                            )
+                        }
                     )
                 )
         )
@@ -128,18 +139,29 @@ fun HomeScreen(
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Top bar
+            // Top bar with logo + title
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "FusionX",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = CyanPrimary
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Image(
+                        painter = painterResource(id = R.drawable.fusionx_logo),
+                        contentDescription = "FusionX Logo",
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Text(
+                        text = "FusionX",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = CyanPrimary
+                    )
+                }
                 Row {
                     IconButton(onClick = onNavigateToServers) {
                         Icon(Icons.AutoMirrored.Filled.List, "Servers", tint = TextSecondary)
@@ -236,7 +258,7 @@ fun HomeScreen(
                         )
                         if (selectedProfile != null) {
                             Text(
-                                text = "${selectedProfile?.protocol?.uppercase()} • ${selectedProfile?.address}:${selectedProfile?.port}",
+                                text = "${selectedProfile?.protocol?.uppercase()} \u2022 ${selectedProfile?.address}:${selectedProfile?.port}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextSecondary
                             )

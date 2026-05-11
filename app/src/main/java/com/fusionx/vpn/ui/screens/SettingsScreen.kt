@@ -69,6 +69,7 @@ fun SettingsScreen(
     val bypassLan by viewModel.prefs.bypassLan.collectAsState(initial = true)
     val enableSpeedDisplay by viewModel.prefs.enableSpeedDisplay.collectAsState(initial = true)
     val autoConnect by viewModel.prefs.autoConnect.collectAsState(initial = false)
+    val wallpaperFade by viewModel.prefs.wallpaperFade.collectAsState(initial = true)
     val dnsMode by viewModel.prefs.dnsMode.collectAsState(initial = "system")
     val routingMode by viewModel.prefs.routingMode.collectAsState(initial = "global")
 
@@ -113,6 +114,15 @@ fun SettingsScreen(
                     title = "Reset Wallpaper",
                     subtitle = "Remove custom background",
                     onClick = { viewModel.setWallpaper(null) }
+                )
+                SettingsToggle(
+                    icon = Icons.Default.Image,
+                    title = "Wallpaper Fade",
+                    subtitle = if (wallpaperFade) "Faded background (subtle)" else "Normal background (full brightness)",
+                    checked = wallpaperFade,
+                    onCheckedChange = {
+                        scope.launch { viewModel.prefs.set(PrefsManager.KEY_WALLPAPER_FADE, it) }
+                    }
                 )
             }
 

@@ -17,6 +17,7 @@ import com.fusionx.vpn.core.XrayCore
 import com.fusionx.vpn.data.AppDatabase
 import com.fusionx.vpn.model.CoreType
 import com.fusionx.vpn.model.ServerProfile
+import com.v2ray.ang.service.TProxyService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,6 +26,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.FileOutputStream
 
 class FusionVpnService : VpnService() {
 
@@ -35,6 +37,9 @@ class FusionVpnService : VpnService() {
         const val ACTION_START = "com.fusionx.vpn.START"
         const val ACTION_STOP = "com.fusionx.vpn.STOP"
         const val EXTRA_PROFILE_ID = "profile_id"
+
+        private const val SOCKS_PORT = 10808
+        private const val HTTP_PORT = 10809
 
         var isRunning = false
             private set
@@ -52,6 +57,7 @@ class FusionVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var statsJob: Job? = null
     private var activeCoreType: CoreType? = null
+    private var tun2socksRunning = false
 
     override fun onCreate() {
         super.onCreate()
@@ -65,6 +71,7 @@ class FusionVpnService : VpnService() {
                 return START_NOT_STICKY
             }
             ACTION_START -> {
+                startForeground(NOTIFICATION_ID, createNotification("Connecting..."))
                 val profileId = intent.getLongExtra(EXTRA_PROFILE_ID, -1)
                 if (profileId >= 0) {
                     serviceScope.launch { startVpn(profileId) }
@@ -82,9 +89,13 @@ class FusionVpnService : VpnService() {
             currentProfile = profile
             activeCoreType = profile.coreType
 
-            startForeground(NOTIFICATION_ID, createNotification("Connecting..."))
+            // Start the appropriate core FIRST (local SOCKS5 proxy)
+            when (profile.coreType) {
+                CoreType.XRAY -> startXrayCore(profile)
+                CoreType.SING_BOX -> startSingBoxCore(profile)
+            }
 
-            // Establish VPN tunnel
+            // Establish VPN tunnel AFTER core is running
             val builder = Builder()
                 .setSession("FusionX")
                 .setMtu(1500)
@@ -97,27 +108,28 @@ class FusionVpnService : VpnService() {
                 builder.setMetered(false)
             }
 
+            try {
+                builder.addDisallowedApplication(packageName)
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not exclude self from VPN", e)
+            }
+
             vpnInterface = builder.establish()
 
             if (vpnInterface == null) {
                 Log.e(TAG, "Failed to establish VPN interface")
-                stopSelf()
+                stopVpn()
                 return
             }
 
-            // Start the appropriate core
-            when (profile.coreType) {
-                CoreType.XRAY -> startXrayCore(profile)
-                CoreType.SING_BOX -> startSingBoxCore(profile)
-            }
+            // Start tun2socks bridge (TUN fd -> local SOCKS5 proxy)
+            startTun2Socks(vpnInterface!!.fd)
 
             isRunning = true
             uploadBytes = 0
             downloadBytes = 0
 
-            // Start stats polling
             startStatsPolling()
-
             updateNotification("Connected: ${profile.displayName}")
             Log.i(TAG, "VPN started with ${profile.coreType} core")
         } catch (t: Throwable) {
@@ -131,7 +143,7 @@ class FusionVpnService : VpnService() {
         if (!core.initialize()) {
             throw RuntimeException("Xray core init failed")
         }
-        val config = XrayConfigBuilder.buildConfig(profile)
+        val config = XrayConfigBuilder.buildConfig(profile, SOCKS_PORT, HTTP_PORT)
         core.start(config) { code, msg ->
             Log.d(TAG, "Xray status: $code - $msg")
         }
@@ -146,6 +158,63 @@ class FusionVpnService : VpnService() {
         val config = SingBoxConfigBuilder.buildConfig(profile, tunEnabled = false)
         core.start(config)
         singBoxCore = core
+    }
+
+    private fun startTun2Socks(tunFd: Int) {
+        if (!TProxyService.isLoaded()) {
+            Log.w(TAG, "tun2socks library not available, skipping")
+            return
+        }
+
+        val configFile = File(applicationContext.filesDir, "tun2socks.yml")
+        val configContent = """
+tunnel:
+  mtu: 1500
+
+socks5:
+  port: $SOCKS_PORT
+  address: 127.0.0.1
+  udp: 'udp'
+
+misc:
+  task-stack-size: 81920
+  connect-timeout: 5000
+  read-write-timeout: 60000
+  log-file: /dev/null
+  log-level: warn
+  pid-file: /dev/null
+  limit-nofile: 65535
+""".trimIndent()
+        FileOutputStream(configFile).use {
+            it.write(configContent.toByteArray())
+        }
+
+        Thread({
+            try {
+                Log.i(TAG, "Starting tun2socks bridge fd=$tunFd -> socks5://127.0.0.1:$SOCKS_PORT")
+                tun2socksRunning = true
+                TProxyService.TProxyStartService(configFile.absolutePath, tunFd)
+                Log.i(TAG, "tun2socks exited")
+            } catch (t: Throwable) {
+                Log.e(TAG, "tun2socks failed", t)
+            } finally {
+                tun2socksRunning = false
+            }
+        }, "tun2socks").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun stopTun2Socks() {
+        if (tun2socksRunning && TProxyService.isLoaded()) {
+            try {
+                TProxyService.TProxyStopService()
+            } catch (t: Throwable) {
+                Log.w(TAG, "Error stopping tun2socks", t)
+            }
+        }
+        tun2socksRunning = false
     }
 
     private fun startStatsPolling() {
@@ -175,25 +244,27 @@ class FusionVpnService : VpnService() {
         statsJob?.cancel()
         statsJob = null
 
+        stopTun2Socks()
+
         try {
             xrayCore?.stop()
             xrayCore = null
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping Xray core", e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Error stopping Xray core", t)
         }
 
         try {
             singBoxCore?.stop()
             singBoxCore = null
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping sing-box core", e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Error stopping sing-box core", t)
         }
 
         try {
             vpnInterface?.close()
             vpnInterface = null
-        } catch (e: Exception) {
-            Log.e(TAG, "Error closing VPN interface", e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Error closing VPN interface", t)
         }
 
         isRunning = false

@@ -23,8 +23,9 @@ class XrayCore(private val context: Context) {
             go.Seq.initIfLoaded(context)
 
             val assetsPath = context.filesDir.absolutePath
+            val tempPath = context.cacheDir.absolutePath
             copyAssetsIfNeeded(context, assetsPath)
-            libv2ray.Libv2ray.initCoreEnv(assetsPath)
+            libv2ray.Libv2ray.initCoreEnv(assetsPath, tempPath)
             Log.i(TAG, "Xray core initialized. Version: ${getVersion()}")
             return true
         } catch (t: Throwable) {
@@ -41,30 +42,30 @@ class XrayCore(private val context: Context) {
         }
     }
 
-    fun start(configJson: String, onStatus: ((Int, String) -> Unit)? = null) {
+    fun start(configJson: String, vpnFd: Int = 0, onStatus: ((Int, String) -> Unit)? = null) {
         statusCallback = onStatus
 
         val handler = object : libv2ray.CoreCallbackHandler {
-            override fun onEmitStatus(code: Long, msg: String) {
+            override fun onEmitStatus(code: Long, msg: String): Long {
                 Log.d(TAG, "Status: $code - $msg")
                 statusCallback?.invoke(code.toInt(), msg)
+                return 0
             }
 
-            override fun shutdown() {
+            override fun shutdown(): Long {
                 Log.d(TAG, "Core shutdown requested")
+                return 0
             }
 
             override fun startup(): Long {
                 Log.d(TAG, "Core startup")
                 return 0
             }
-
-            override fun incRefnum(): Int = 0
         }
 
         try {
             controller = libv2ray.Libv2ray.newCoreController(handler)
-            controller?.startLoop(configJson)
+            controller?.startLoop(configJson, vpnFd)
             Log.i(TAG, "Xray core started")
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to start Xray core", t)

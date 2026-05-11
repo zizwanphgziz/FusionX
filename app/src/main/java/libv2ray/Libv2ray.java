@@ -2,25 +2,31 @@ package libv2ray;
 
 /**
  * JNI bridge to Xray/V2Ray core library.
- * Matches exported JNI functions from libxrayjni.so (v2rayNG STRX mod).
+ * Signatures match the gomobile-generated native code from v2rayNG STRX.
  */
 public abstract class Libv2ray {
     private Libv2ray() {}
 
     static {
         go.Seq.loadXray();
-        _init();
+        try {
+            _init();
+        } catch (Throwable t) {
+            // Defer init failure
+        }
     }
 
     private static native void _init();
 
     public static native String checkVersionX();
 
-    public static native void initCoreEnv(String assetsPath);
+    public static native void initCoreEnv(String assetsPath, String tempPath);
 
     public static native CoreController newCoreController(CoreCallbackHandler handler);
 
-    public static native long measureOutboundDelay(String config);
+    public static native long measureOutboundDelay(String config, String url);
+
+    public static native void touch();
 
     static final class proxyCoreCallbackHandler implements CoreCallbackHandler {
         private final int refnum;
@@ -30,17 +36,16 @@ public abstract class Libv2ray {
             go.Seq.incGoRef(refnum);
         }
 
-        @Override
         public int incRefnum() {
             go.Seq.incGoRef(refnum);
             return refnum;
         }
 
         @Override
-        public native void onEmitStatus(long code, String msg);
+        public native long onEmitStatus(long code, String msg);
 
         @Override
-        public native void shutdown();
+        public native long shutdown();
 
         @Override
         public native long startup();

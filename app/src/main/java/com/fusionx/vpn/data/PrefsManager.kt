@@ -32,9 +32,11 @@ class PrefsManager(private val context: Context) {
         val KEY_SOCKS_PORT = intPreferencesKey("socks_port")
         val KEY_HTTP_PORT = intPreferencesKey("http_port")
         val KEY_AUTO_CONNECT = booleanPreferencesKey("auto_connect")
+        val KEY_WALLPAPER_FADE = booleanPreferencesKey("wallpaper_fade")
     }
 
     val wallpaperUri: Flow<String> = context.dataStore.data.map { it[KEY_WALLPAPER_URI] ?: "" }
+    val wallpaperFade: Flow<Boolean> = context.dataStore.data.map { it[KEY_WALLPAPER_FADE] ?: true }
     val selectedProfileId: Flow<Long> = context.dataStore.data.map { it[KEY_SELECTED_PROFILE] ?: -1 }
     val dnsMode: Flow<String> = context.dataStore.data.map { it[KEY_DNS_MODE] ?: "system" }
     val customDns: Flow<String> = context.dataStore.data.map { it[KEY_CUSTOM_DNS] ?: "1.1.1.1" }

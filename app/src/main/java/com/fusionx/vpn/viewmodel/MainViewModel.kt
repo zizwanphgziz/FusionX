@@ -59,6 +59,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Wallpaper
     val wallpaperUri: StateFlow<String> = prefs.wallpaperUri
         .stateIn(viewModelScope, SharingStarted.Lazily, "")
+    val wallpaperFade: StateFlow<Boolean> = prefs.wallpaperFade
+        .stateIn(viewModelScope, SharingStarted.Lazily, true)
 
     // Import status
     private val _importResult = MutableStateFlow<ImportResult?>(null)
