@@ -1,31 +1,42 @@
 package go;
 
 import android.content.Context;
+import android.util.Log;
 
 /**
  * Go mobile Seq bridge — required by gomobile-generated native libraries.
  * This class provides the serialization layer between Java and Go.
+ * Loading is deferred until the VPN core is actually needed.
  */
 public class Seq {
     private static boolean loaded = false;
-
-    static {
-        try {
-            System.loadLibrary("xrayjni");
-            loaded = true;
-        } catch (UnsatisfiedLinkError e) {
-            // Will be loaded later when core is selected
-        }
-    }
+    private static final String TAG = "GoSeq";
 
     public static boolean isLoaded() {
         return loaded;
     }
 
-    public static void loadXray() {
-        if (!loaded) {
-            System.loadLibrary("xrayjni");
+    public static synchronized boolean loadXray() {
+        if (loaded) return true;
+        try {
+            System.loadLibrary("gojni");
             loaded = true;
+            Log.i(TAG, "Loaded libgojni.so (xray)");
+            return true;
+        } catch (UnsatisfiedLinkError e) {
+            Log.w(TAG, "Failed to load libgojni.so: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public static void initIfLoaded(Context ctx) {
+        if (!loaded) return;
+        try {
+            init(ctx);
+        } catch (UnsatisfiedLinkError e) {
+            Log.w(TAG, "Seq.init() not available: " + e.getMessage());
+        } catch (Throwable t) {
+            Log.w(TAG, "Seq.init() failed: " + t.getMessage());
         }
     }
 
@@ -43,8 +54,12 @@ public class Seq {
         }
         @Override
         protected void finalize() throws Throwable {
-            if (refnum != nullRef) {
-                destroyRef(refnum);
+            if (loaded && refnum != nullRef) {
+                try {
+                    destroyRef(refnum);
+                } catch (UnsatisfiedLinkError e) {
+                    // ignore
+                }
             }
             super.finalize();
         }

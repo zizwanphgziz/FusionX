@@ -120,28 +120,32 @@ class FusionVpnService : VpnService() {
 
             updateNotification("Connected: ${profile.displayName}")
             Log.i(TAG, "VPN started with ${profile.coreType} core")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start VPN", e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to start VPN", t)
             stopVpn()
         }
     }
 
     private fun startXrayCore(profile: ServerProfile) {
-        xrayCore = XrayCore(applicationContext).apply {
-            initialize()
-            val config = XrayConfigBuilder.buildConfig(profile)
-            start(config) { code, msg ->
-                Log.d(TAG, "Xray status: $code - $msg")
-            }
+        val core = XrayCore(applicationContext)
+        if (!core.initialize()) {
+            throw RuntimeException("Xray core init failed")
         }
+        val config = XrayConfigBuilder.buildConfig(profile)
+        core.start(config) { code, msg ->
+            Log.d(TAG, "Xray status: $code - $msg")
+        }
+        xrayCore = core
     }
 
     private fun startSingBoxCore(profile: ServerProfile) {
-        singBoxCore = SingBoxCore(applicationContext).apply {
-            initialize()
-            val config = SingBoxConfigBuilder.buildConfig(profile, tunEnabled = false)
-            start(config)
+        val core = SingBoxCore(applicationContext)
+        if (!core.initialize()) {
+            throw RuntimeException("sing-box core init failed")
         }
+        val config = SingBoxConfigBuilder.buildConfig(profile, tunEnabled = false)
+        core.start(config)
+        singBoxCore = core
     }
 
     private fun startStatsPolling() {

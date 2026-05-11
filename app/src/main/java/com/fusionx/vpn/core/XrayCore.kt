@@ -4,9 +4,6 @@ import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import libv2ray.CoreCallbackHandler
-import libv2ray.CoreController
-import libv2ray.Libv2ray
 
 class XrayCore(private val context: Context) {
 
@@ -14,24 +11,32 @@ class XrayCore(private val context: Context) {
         private const val TAG = "XrayCore"
     }
 
-    private var controller: CoreController? = null
+    private var controller: libv2ray.CoreController? = null
     private var statusCallback: ((Int, String) -> Unit)? = null
 
-    fun initialize() {
+    fun initialize(): Boolean {
         try {
+            if (!go.Seq.loadXray()) {
+                Log.e(TAG, "Failed to load native library")
+                return false
+            }
+            go.Seq.initIfLoaded(context)
+
             val assetsPath = context.filesDir.absolutePath
             copyAssetsIfNeeded(context, assetsPath)
-            Libv2ray.initCoreEnv(assetsPath)
+            libv2ray.Libv2ray.initCoreEnv(assetsPath)
             Log.i(TAG, "Xray core initialized. Version: ${getVersion()}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize Xray core", e)
+            return true
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to initialize Xray core", t)
+            return false
         }
     }
 
     fun getVersion(): String {
         return try {
-            Libv2ray.checkVersionX()
-        } catch (e: Exception) {
+            libv2ray.Libv2ray.checkVersionX()
+        } catch (t: Throwable) {
             "unknown"
         }
     }
@@ -39,7 +44,7 @@ class XrayCore(private val context: Context) {
     fun start(configJson: String, onStatus: ((Int, String) -> Unit)? = null) {
         statusCallback = onStatus
 
-        val handler = object : CoreCallbackHandler {
+        val handler = object : libv2ray.CoreCallbackHandler {
             override fun onEmitStatus(code: Long, msg: String) {
                 Log.d(TAG, "Status: $code - $msg")
                 statusCallback?.invoke(code.toInt(), msg)
@@ -58,12 +63,12 @@ class XrayCore(private val context: Context) {
         }
 
         try {
-            controller = Libv2ray.newCoreController(handler)
+            controller = libv2ray.Libv2ray.newCoreController(handler)
             controller?.startLoop(configJson)
             Log.i(TAG, "Xray core started")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start Xray core", e)
-            throw e
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to start Xray core", t)
+            throw RuntimeException("Xray core start failed", t)
         }
     }
 
@@ -72,15 +77,15 @@ class XrayCore(private val context: Context) {
             controller?.stopLoop()
             controller = null
             Log.i(TAG, "Xray core stopped")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to stop Xray core", e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to stop Xray core", t)
         }
     }
 
     fun isRunning(): Boolean {
         return try {
             controller?.isRunning ?: false
-        } catch (e: Exception) {
+        } catch (t: Throwable) {
             false
         }
     }
@@ -89,7 +94,7 @@ class XrayCore(private val context: Context) {
         return withContext(Dispatchers.IO) {
             try {
                 controller?.measureDelay(url) ?: -1
-            } catch (e: Exception) {
+            } catch (t: Throwable) {
                 -1
             }
         }
@@ -98,7 +103,7 @@ class XrayCore(private val context: Context) {
     fun queryStats(tag: String, direction: String): Long {
         return try {
             controller?.queryStats(tag, direction) ?: 0
-        } catch (e: Exception) {
+        } catch (t: Throwable) {
             0
         }
     }

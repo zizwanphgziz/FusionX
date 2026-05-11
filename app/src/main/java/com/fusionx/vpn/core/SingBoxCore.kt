@@ -4,42 +4,61 @@ import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import libcore.BoxInstance
-import libcore.Libcore
 
 class SingBoxCore(private val context: Context) {
 
     companion object {
         private const val TAG = "SingBoxCore"
+        private var singboxLoaded = false
+
+        @Synchronized
+        fun loadSingBox(): Boolean {
+            if (singboxLoaded) return true
+            return try {
+                System.loadLibrary("singboxjni")
+                singboxLoaded = true
+                Log.i(TAG, "Loaded libsingboxjni.so")
+                true
+            } catch (e: UnsatisfiedLinkError) {
+                Log.w(TAG, "Failed to load libsingboxjni.so: ${e.message}")
+                false
+            }
+        }
     }
 
-    private var boxInstance: BoxInstance? = null
+    private var boxInstance: libcore.BoxInstance? = null
 
-    fun initialize() {
+    fun initialize(): Boolean {
         try {
-            Libcore.ensureInitialized()
+            if (!loadSingBox()) {
+                Log.e(TAG, "Failed to load sing-box native library")
+                return false
+            }
+            libcore.Libcore.ensureInitialized()
             val basePath = context.filesDir.absolutePath + "/sing-box"
             val tempPath = context.cacheDir.absolutePath + "/sing-box"
             java.io.File(basePath).mkdirs()
             java.io.File(tempPath).mkdirs()
             copyAssetsIfNeeded(context, basePath)
-            Libcore.initCore(basePath, tempPath, 0, "")
+            libcore.Libcore.initCore(basePath, tempPath, 0, "")
             Log.i(TAG, "sing-box core initialized")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize sing-box core", e)
+            return true
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to initialize sing-box core", t)
+            return false
         }
     }
 
     fun start(configJson: String) {
         try {
-            boxInstance = Libcore.newSingBoxInstance(configJson)
+            boxInstance = libcore.Libcore.newSingBoxInstance(configJson)
             boxInstance?.preStart()
             boxInstance?.start()
             boxInstance?.setAsMain()
             Log.i(TAG, "sing-box core started")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start sing-box", e)
-            throw e
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to start sing-box", t)
+            throw RuntimeException("sing-box start failed", t)
         }
     }
 
@@ -48,8 +67,8 @@ class SingBoxCore(private val context: Context) {
             boxInstance?.close()
             boxInstance = null
             Log.i(TAG, "sing-box core stopped")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to stop sing-box", e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to stop sing-box", t)
         }
     }
 
@@ -58,7 +77,7 @@ class SingBoxCore(private val context: Context) {
     fun queryStats(tag: String, direction: String): Long {
         return try {
             boxInstance?.queryStats(tag, direction) ?: 0
-        } catch (e: Exception) {
+        } catch (t: Throwable) {
             0
         }
     }
@@ -67,8 +86,8 @@ class SingBoxCore(private val context: Context) {
         withContext(Dispatchers.IO) {
             try {
                 boxInstance?.selectOutbound(tag)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to select outbound: $tag", e)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to select outbound: $tag", t)
             }
         }
     }
