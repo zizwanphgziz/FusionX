@@ -1,94 +1,121 @@
 package go;
 
 import android.content.Context;
-import android.util.Log;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Logger;
 
-/**
- * Go mobile Seq bridge — required by gomobile-generated native libraries.
- * This class provides the serialization layer between Java and Go.
- * Loading is deferred until the VPN core is actually needed.
- */
 public class Seq {
+    private static final Logger log = Logger.getLogger("GoSeq");
     private static boolean loaded = false;
-    private static final String TAG = "GoSeq";
+
+    private Seq() {}
+
+    public interface GoObject {
+        int incRefnum();
+    }
+
+    public interface Proxy extends GoObject {}
+
+    public static final class Ref {
+        public int refnum;
+        private Object obj;
+
+        Ref(int refnum, Object obj) {
+            this.refnum = refnum;
+            this.obj = obj;
+        }
+    }
+
+    private static final RefTracker tracker = new RefTracker();
+    private static final GoRefQueue goRefQueue = new GoRefQueue();
+    private static final ConcurrentHashMap<Integer, GoObject> goObjs = new ConcurrentHashMap<>();
+
+    static {
+        try {
+            System.loadLibrary("gojni");
+            loaded = true;
+            init();
+            Universe._init();
+        } catch (Throwable t) {
+            log.warning("Failed to load gojni: " + t.getMessage());
+        }
+    }
 
     public static boolean isLoaded() {
         return loaded;
     }
 
     public static synchronized boolean loadXray() {
-        if (loaded) return true;
-        try {
-            System.loadLibrary("gojni");
-            loaded = true;
-            Log.i(TAG, "Loaded libgojni.so (xray)");
-            return true;
-        } catch (UnsatisfiedLinkError e) {
-            Log.w(TAG, "Failed to load libgojni.so: " + e.getMessage());
-            return false;
-        }
+        return loaded;
     }
 
-    public static void initIfLoaded(Context ctx) {
-        if (!loaded) return;
-        try {
-            init(ctx);
-        } catch (UnsatisfiedLinkError e) {
-            Log.w(TAG, "Seq.init() not available: " + e.getMessage());
-        } catch (Throwable t) {
-            Log.w(TAG, "Seq.init() failed: " + t.getMessage());
-        }
+    public static void touch() {
+        // Force class loading and static initializer
     }
 
-    public static native void init(Context ctx);
-    public static native void destroyRef(int refnum);
-    public static native void incGoRef(int refnum);
-    public static native void setContext(Object ctx);
+    // Native methods — signatures must match gomobile JNI_OnLoad registration exactly
+    private static native void init();
+    static native void destroyRef(int refnum);
+    public static native void incGoRef(int refnum, GoObject o);
+    static native void setContext(Object ctx);
 
-    public static int nullRef = 41;
-
-    public static final class Ref {
-        public int refnum;
-        public Ref(int refnum) {
-            this.refnum = refnum;
-        }
-        @Override
-        protected void finalize() throws Throwable {
-            if (loaded && refnum != nullRef) {
-                try {
-                    destroyRef(refnum);
-                } catch (UnsatisfiedLinkError e) {
-                    // ignore
-                }
-            }
-            super.finalize();
-        }
+    public static void setContext(Context ctx) {
+        setContext((Object) ctx);
     }
 
-    public static Object getRef(int refnum) {
+    public static void trackGoRef(int refnum, GoObject o) {
+        goObjs.put(refnum, o);
+        goRefQueue.track(refnum, o);
+    }
+
+    public static void incRefnum(int refnum) {
+        tracker.incRefnum(refnum);
+    }
+
+    public static int incGoObjectRef(GoObject o) {
+        int refnum = o.incRefnum();
+        return refnum;
+    }
+
+    public static Ref getRef(int refnum) {
         return tracker.get(refnum);
     }
-
-    private static final RefTracker tracker = new RefTracker();
 
     public static int incRef(Object o) {
         return tracker.inc(o);
     }
 
+    static void decRef(int refnum) {
+        tracker.dec(refnum);
+    }
+
     private static class RefTracker {
-        private final java.util.concurrent.ConcurrentHashMap<Integer, Object> refs =
-            new java.util.concurrent.ConcurrentHashMap<>();
-        private final java.util.concurrent.atomic.AtomicInteger nextNum =
-            new java.util.concurrent.atomic.AtomicInteger(42);
+        private final ConcurrentHashMap<Integer, Ref> refs = new ConcurrentHashMap<>();
+        private final AtomicInteger nextNum = new AtomicInteger(42);
 
         int inc(Object o) {
             int num = nextNum.getAndIncrement();
-            refs.put(num, o);
+            refs.put(num, new Ref(num, o));
             return num;
         }
 
-        Object get(int refnum) {
+        Ref get(int refnum) {
             return refs.get(refnum);
+        }
+
+        synchronized void dec(int refnum) {
+            refs.remove(refnum);
+        }
+
+        synchronized void incRefnum(int refnum) {
+            // increment count
+        }
+    }
+
+    private static class GoRefQueue {
+        void track(int refnum, GoObject o) {
+            // Track go reference for GC
         }
     }
 }

@@ -2,19 +2,19 @@ package libcore;
 
 /**
  * JNI bridge to sing-box BoxInstance — controls the sing-box lifecycle.
- * Matches exported JNI functions from libsingboxjni.so (from NekoBox 1.4.2).
+ * Note: sing-box has its own Go runtime, separate from Xray's libgojni.so.
  */
-public class BoxInstance implements go.Universe.GoObject {
+public class BoxInstance implements go.Seq.GoObject {
     private final int refnum;
 
     BoxInstance(int refnum) {
         this.refnum = refnum;
-        go.Seq.incGoRef(refnum);
+        go.Seq.trackGoRef(refnum, this);
     }
 
     @Override
     public int incRefnum() {
-        go.Seq.incGoRef(refnum);
+        go.Seq.incGoRef(refnum, this);
         return refnum;
     }
 

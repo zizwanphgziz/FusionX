@@ -16,11 +16,13 @@ class XrayCore(private val context: Context) {
 
     fun initialize(): Boolean {
         try {
-            if (!go.Seq.loadXray()) {
+            // Touch Seq to trigger static init which loads libgojni.so
+            go.Seq.touch()
+            if (!go.Seq.isLoaded()) {
                 Log.e(TAG, "Failed to load native library")
                 return false
             }
-            go.Seq.initIfLoaded(context)
+            go.Seq.setContext(context)
 
             val assetsPath = context.filesDir.absolutePath
             val tempPath = context.cacheDir.absolutePath
