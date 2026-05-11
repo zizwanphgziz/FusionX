@@ -1,29 +1,37 @@
 package go;
 
-public abstract class Universe {
-    private Universe() {}
+import go.Seq;
 
-    static native void _init();
+public abstract class Universe {
+    private static native void _init();
 
     public static void touch() {
-        // Force class loading
     }
 
-    public static final class proxyerror extends Exception implements Seq.GoObject {
+    static {
+        Seq.touch();
+        _init();
+    }
+
+    private Universe() {
+    }
+
+    private static final class proxyerror extends Exception implements Seq.Proxy, error {
         private final int refnum;
 
-        public proxyerror(int refnum) {
-            this.refnum = refnum;
-            Seq.trackGoRef(refnum, this);
-        }
+        @Override
+        public native String error();
 
         @Override
         public final int incRefnum() {
-            Seq.incGoRef(refnum, this);
-            return refnum;
+            Seq.incGoRef(this.refnum, this);
+            return this.refnum;
         }
 
-        public native String error();
+        proxyerror(int i) {
+            this.refnum = i;
+            Seq.trackGoRef(i, this);
+        }
 
         @Override
         public String getMessage() {

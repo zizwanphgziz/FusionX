@@ -16,23 +16,30 @@ class XrayCore(private val context: Context) {
 
     fun initialize(): Boolean {
         try {
-            // Touch Seq to trigger static init which loads libgojni.so
+            // Touch Seq to trigger static init which loads libgojni.so and initializes Go bridge
             go.Seq.touch()
-            if (!go.Seq.isLoaded()) {
-                Log.e(TAG, "Failed to load native library")
-                return false
-            }
-            go.Seq.setContext(context)
+            go.Seq.setContext(context.applicationContext)
 
             val assetsPath = context.filesDir.absolutePath
-            val tempPath = context.cacheDir.absolutePath
             copyAssetsIfNeeded(context, assetsPath)
-            libv2ray.Libv2ray.initCoreEnv(assetsPath, tempPath)
+
+            // Second param is device ID for XUDP base key (matching v2rayNG reference)
+            val deviceId = generateDeviceId()
+            libv2ray.Libv2ray.initCoreEnv(assetsPath, deviceId)
             Log.i(TAG, "Xray core initialized. Version: ${getVersion()}")
             return true
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to initialize Xray core", t)
             return false
+        }
+    }
+
+    private fun generateDeviceId(): String {
+        return try {
+            val bytes = "android_id".toByteArray(Charsets.UTF_8).copyOf(32)
+            android.util.Base64.encodeToString(bytes, android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP)
+        } catch (e: Exception) {
+            ""
         }
     }
 

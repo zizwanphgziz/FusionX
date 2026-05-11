@@ -1,49 +1,65 @@
 package libv2ray;
 
-public class CoreController implements go.Seq.GoObject {
+import go.Seq;
+import java.util.Arrays;
+
+public final class CoreController implements Seq.Proxy {
     private final int refnum;
 
-    CoreController(int refnum) {
-        this.refnum = refnum;
-        go.Seq.trackGoRef(refnum, this);
-    }
+    private static native int __NewCoreController(CoreCallbackHandler coreCallbackHandler);
 
-    public CoreController(CoreCallbackHandler handler) {
-        this.refnum = __NewCoreController(handler);
-        go.Seq.trackGoRef(refnum, this);
-    }
+    public final native CoreCallbackHandler getCallbackHandler();
+    public final native boolean getIsRunning();
+    public native long measureDelay(String str) throws Exception;
+    public native long queryStats(String str, String str2);
+    public final native void setCallbackHandler(CoreCallbackHandler coreCallbackHandler);
+    public final native void setIsRunning(boolean z);
+    public native void startLoop(String str, int i) throws Exception;
+    public native void stopLoop() throws Exception;
 
-    private static native int __NewCoreController(CoreCallbackHandler handler);
+    static {
+        Libv2ray.touch();
+    }
 
     @Override
     public final int incRefnum() {
-        go.Seq.incGoRef(refnum, this);
-        return refnum;
+        Seq.incGoRef(this.refnum, this);
+        return this.refnum;
     }
 
-    public native void startLoop(String config, int fd);
-    public native void stopLoop();
-    public final native boolean getIsRunning();
-    public final native void setIsRunning(boolean running);
-    public native long measureDelay(String url);
-    public native long queryStats(String tag, String direct);
-    public final native CoreCallbackHandler getCallbackHandler();
-    public final native void setCallbackHandler(CoreCallbackHandler handler);
-
-    @Override
-    public boolean equals(Object o) {
-        if (o == null || !(o instanceof CoreController)) return false;
-        CoreController that = (CoreController) o;
-        return this.refnum == that.refnum;
+    public CoreController(CoreCallbackHandler coreCallbackHandler) {
+        int ref = __NewCoreController(coreCallbackHandler);
+        this.refnum = ref;
+        Seq.trackGoRef(ref, this);
     }
 
-    @Override
+    CoreController(int i) {
+        this.refnum = i;
+        Seq.trackGoRef(i, this);
+    }
+
+    public boolean equals(Object obj) {
+        if (obj == null || !(obj instanceof CoreController)) {
+            return false;
+        }
+        CoreController coreController = (CoreController) obj;
+        CoreCallbackHandler callbackHandler = getCallbackHandler();
+        CoreCallbackHandler callbackHandler2 = coreController.getCallbackHandler();
+        if (callbackHandler == null) {
+            if (callbackHandler2 != null) {
+                return false;
+            }
+        } else if (!callbackHandler.equals(callbackHandler2)) {
+            return false;
+        }
+        return getIsRunning() == coreController.getIsRunning();
+    }
+
     public int hashCode() {
-        return refnum;
+        return Arrays.hashCode(new Object[]{getCallbackHandler(), Boolean.valueOf(getIsRunning())});
     }
 
-    @Override
     public String toString() {
-        return "CoreController{refnum=" + refnum + "}";
+        return "CoreController{CallbackHandler:" + getCallbackHandler() + ",IsRunning:" + getIsRunning() + ",}";
     }
 }

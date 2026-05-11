@@ -1,43 +1,47 @@
 package libv2ray;
 
+import go.Seq;
+
 public abstract class Libv2ray {
-    private Libv2ray() {}
-
-    static {
-        go.Seq.touch();
-    }
-
     private static native void _init();
+
     public static native String checkVersionX();
-    public static native void initCoreEnv(String assetsPath, String tempPath);
-    public static native CoreController newCoreController(CoreCallbackHandler handler);
-    public static native long measureOutboundDelay(String config, String url);
+    public static native void initCoreEnv(String str, String str2);
+    public static native long measureOutboundDelay(String str, String str2) throws Exception;
+    public static native CoreController newCoreController(CoreCallbackHandler coreCallbackHandler);
 
     public static void touch() {
-        // Force class loading
     }
 
-    static final class proxyCoreCallbackHandler implements CoreCallbackHandler, go.Seq.GoObject {
+    static {
+        Seq.touch();
+        _init();
+    }
+
+    private Libv2ray() {
+    }
+
+    private static final class proxyCoreCallbackHandler implements Seq.Proxy, CoreCallbackHandler {
         private final int refnum;
 
-        proxyCoreCallbackHandler(int refnum) {
-            this.refnum = refnum;
-            go.Seq.trackGoRef(refnum, this);
-        }
-
         @Override
-        public final int incRefnum() {
-            go.Seq.incGoRef(refnum, this);
-            return refnum;
-        }
-
-        @Override
-        public native long onEmitStatus(long code, String msg);
+        public native long onEmitStatus(long j, String str);
 
         @Override
         public native long shutdown();
 
         @Override
         public native long startup();
+
+        @Override
+        public final int incRefnum() {
+            Seq.incGoRef(this.refnum, this);
+            return this.refnum;
+        }
+
+        proxyCoreCallbackHandler(int i) {
+            this.refnum = i;
+            Seq.trackGoRef(i, this);
+        }
     }
 }
